@@ -725,6 +725,23 @@ static void set_enum(float *dst, const char *value, const char **opts,
                      (float)(count - 1));
 }
 
+/* ═══════════════════════════════════════ state JSON helper ══ */
+
+/* Minimal JSON field reader for state restore — the encoder writes a
+ * flat {"key":value,...} object, so strstr + atof is sufficient. */
+static int sb_json_get_float(const char *json, const char *key, float *out) {
+    if (!json || !key || !out) return -1;
+    char search[32];
+    int n = snprintf(search, sizeof(search), "\"%s\":", key);
+    if (n <= 0 || n >= (int)sizeof(search)) return -1;
+    const char *p = strstr(json, search);
+    if (!p) return -1;
+    p += n;
+    while (*p == ' ' || *p == '\t') p++;
+    *out = (float)atof(p);
+    return 0;
+}
+
 /* ═══════════════════════════════════════ set_param ══ */
 
 #define SETFR(k,f,lo,hi) \
@@ -733,9 +750,63 @@ static void set_enum(float *dst, const char *value, const char **opts,
         return; \
     }
 
+/* Bulk state restore from the JSON written by get_param("state").
+ * Skip fields not present so older partial saves still load. */
+static void apply_state_json(superboom_t *s, const char *val) {
+    float f;
+    if (sb_json_get_float(val, "inputGain", &f) == 0)   s->inputGain  = sb_clampf(f, 0.5f, 4.0f);
+    if (sb_json_get_float(val, "compAmount", &f) == 0)  s->compAmount = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "drive", &f) == 0)       s->drive      = sb_clampf(f, 1.0f, 20.0f);
+    if (sb_json_get_float(val, "driveMix", &f) == 0)    s->driveMix   = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "distMode", &f) == 0)    s->distMode   = sb_clampf(f, 0.0f, 3.0f);
+    if (sb_json_get_float(val, "flavor", &f) == 0)      s->flavor     = sb_clampf(f, 0.0f, 7.0f);
+    if (sb_json_get_float(val, "shift", &f) == 0)       s->shift      = sb_clampf(f, -2.0f, 2.0f);
+    if (sb_json_get_float(val, "mix", &f) == 0)         s->mix        = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "output", &f) == 0)      s->output     = sb_clampf(f, 0.0f, 2.0f);
+
+    if (sb_json_get_float(val, "b1", &f) == 0) s->bands[0] = sb_clampf(f, 0.0f, 2.0f);
+    if (sb_json_get_float(val, "b2", &f) == 0) s->bands[1] = sb_clampf(f, 0.0f, 2.0f);
+    if (sb_json_get_float(val, "b3", &f) == 0) s->bands[2] = sb_clampf(f, 0.0f, 2.0f);
+    if (sb_json_get_float(val, "b4", &f) == 0) s->bands[3] = sb_clampf(f, 0.0f, 2.0f);
+    if (sb_json_get_float(val, "b5", &f) == 0) s->bands[4] = sb_clampf(f, 0.0f, 2.0f);
+    if (sb_json_get_float(val, "b6", &f) == 0) s->bands[5] = sb_clampf(f, 0.0f, 2.0f);
+    if (sb_json_get_float(val, "b7", &f) == 0) s->bands[6] = sb_clampf(f, 0.0f, 2.0f);
+    if (sb_json_get_float(val, "b8", &f) == 0) s->bands[7] = sb_clampf(f, 0.0f, 2.0f);
+    if (sb_json_get_float(val, "micControl", &f) == 0)  s->micControl = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "vocGain", &f) == 0)     s->vocGain    = sb_clampf(f, 0.5f, 2.0f);
+
+    if (sb_json_get_float(val, "atk", &f) == 0)         s->atk        = sb_clampf(f, 0.0f, 5.0f);
+    if (sb_json_get_float(val, "rel", &f) == 0)         s->rel        = sb_clampf(f, 0.0f, 5.0f);
+    if (sb_json_get_float(val, "modShift", &f) == 0)    s->modShift   = sb_clampf(f, -1.0f, 1.0f);
+    if (sb_json_get_float(val, "modDrive", &f) == 0)    s->modDrive   = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "preType", &f) == 0)     s->preType    = sb_clampf(f, 0.0f, 9.0f);
+    if (sb_json_get_float(val, "grit", &f) == 0)        s->grit       = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "gate", &f) == 0)        s->gate       = sb_clampf(f, 0.0f, 6.0f);
+    if (sb_json_get_float(val, "link", &f) == 0)        s->link       = sb_clampf(f, 0.0f, 1.0f);
+
+    if (sb_json_get_float(val, "loCut", &f) == 0)       s->loCut      = sb_clampf(f, 0.0f, 3.0f);
+    if (sb_json_get_float(val, "hiCut", &f) == 0)       s->hiCut      = sb_clampf(f, 20.0f, 20000.0f);
+    if (sb_json_get_float(val, "sat", &f) == 0)         s->sat        = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "age", &f) == 0)         s->age        = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "flutter", &f) == 0)     s->flutter    = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "bump", &f) == 0)        s->bump       = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "thresh", &f) == 0)      s->thresh     = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "limiter", &f) == 0)     s->limiter    = sb_clampf(f, 0.0f, 1.0f);
+    if (sb_json_get_float(val, "bypass", &f) == 0)      s->bypass     = sb_clampf(f, 0.0f, 1.0f);
+}
+
 static void set_param(void *inst, const char *key, const char *value) {
     superboom_t *s = (superboom_t *)inst;
     if (!key || !value) return;
+
+    /* Bulk state restore for slot autosave round-trip. Without this,
+     * the host's autosave bails on fx:state empty and silently drops
+     * the slot's save indefinitely (Schwung shadow_ui.js
+     * buildSlotPatchJson bailIfEmpty path). */
+    if (strcmp(key, "state") == 0) {
+        apply_state_json(s, value);
+        return;
+    }
 
     /* Page 1: BOOM */
     SETFR("inputGain", inputGain, 0.5, 4.0)
@@ -797,6 +868,38 @@ static void set_param(void *inst, const char *key, const char *value) {
 static int get_param(void *inst, const char *key, char *buf, int buf_len) {
     superboom_t *s = (superboom_t *)inst;
     if (!key) return -1;
+
+    /* ── state (bulk serialization for slot autosave) ── */
+    if (strcmp(key, "state") == 0) {
+        int n = snprintf(buf, buf_len,
+            "{"
+            "\"inputGain\":%.4f,\"compAmount\":%.4f,\"drive\":%.4f,"
+            "\"driveMix\":%.4f,\"distMode\":%.0f,\"flavor\":%.0f,"
+            "\"shift\":%.4f,\"mix\":%.4f,\"output\":%.4f,"
+            "\"b1\":%.4f,\"b2\":%.4f,\"b3\":%.4f,\"b4\":%.4f,"
+            "\"b5\":%.4f,\"b6\":%.4f,\"b7\":%.4f,\"b8\":%.4f,"
+            "\"micControl\":%.0f,\"vocGain\":%.4f,"
+            "\"atk\":%.0f,\"rel\":%.0f,\"modShift\":%.4f,\"modDrive\":%.4f,"
+            "\"preType\":%.0f,\"grit\":%.4f,\"gate\":%.0f,\"link\":%.4f,"
+            "\"loCut\":%.0f,\"hiCut\":%.1f,\"sat\":%.4f,\"age\":%.4f,"
+            "\"flutter\":%.4f,\"bump\":%.4f,\"thresh\":%.4f,"
+            "\"limiter\":%.0f,\"bypass\":%.0f"
+            "}",
+            (double)s->inputGain, (double)s->compAmount, (double)s->drive,
+            (double)s->driveMix, (double)s->distMode, (double)s->flavor,
+            (double)s->shift, (double)s->mix, (double)s->output,
+            (double)s->bands[0], (double)s->bands[1], (double)s->bands[2], (double)s->bands[3],
+            (double)s->bands[4], (double)s->bands[5], (double)s->bands[6], (double)s->bands[7],
+            (double)s->micControl, (double)s->vocGain,
+            (double)s->atk, (double)s->rel, (double)s->modShift, (double)s->modDrive,
+            (double)s->preType, (double)s->grit, (double)s->gate, (double)s->link,
+            (double)s->loCut, (double)s->hiCut, (double)s->sat, (double)s->age,
+            (double)s->flutter, (double)s->bump, (double)s->thresh,
+            (double)s->limiter, (double)s->bypass);
+        if (n < 0) return -1;
+        if (n >= buf_len) return buf_len - 1;
+        return n;
+    }
 
     /* ── chain_params ── */
     if (strcmp(key, "chain_params") == 0) {
